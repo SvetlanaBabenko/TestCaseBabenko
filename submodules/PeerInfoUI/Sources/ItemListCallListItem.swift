@@ -234,6 +234,11 @@ public class ItemListCallListItemNode: ListViewItemNode {
             
             let earliestMessage = item.messages.sorted(by: {$0.timestamp < $1.timestamp}).first!
             let titleText = stringForDate(timestamp: earliestMessage.timestamp, strings: item.presentationData.strings)
+            
+            if let date = item.presentationData.currentDate {
+                titleText = date
+            }
+            
             let (titleLayout, titleApply) = makeTitleLayout(TextNodeLayoutArguments(attributedString: NSAttributedString(string: titleText, font: titleFont, textColor: item.presentationData.theme.list.itemPrimaryTextColor), backgroundColor: nil, maximumNumberOfLines: 1, truncationType: .end, constrainedSize: CGSize(width: params.width - params.rightInset - 20.0 - leftInset, height: CGFloat.greatestFiniteMagnitude), alignment: .natural, cutout: nil, insets: UIEdgeInsets()))
             
             contentHeight += titleLayout.size.height + 18.0

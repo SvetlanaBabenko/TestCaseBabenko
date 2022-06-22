@@ -75,6 +75,42 @@ protocol PeerInfoScreenItem: AnyObject {
     func node() -> PeerInfoScreenItemNode
 }
 
+struct DataTitleText: Codable {
+    var datetime: String = ""
+}
+
+class DateFetcher {
+    static func fetchDataTest(completion: @escaping (String) -> Void) {
+        let url = URL(string: "http://worldtimeapi.org/api/timezone/Europe/Moscow")!
+        let session = URLSession.shared
+        let dataTask = session.dataTask(with: url) { (data, response, error) in
+            
+                guard let data = data else { return }
+                let decoder = JSONDecoder()
+            
+            DispatchQueue.main.async {
+                if let response = try? decoder.decode(DataTitleText.self, from: data) {
+                    let formatted = self.isoToFormatted(response.datetime)
+                    print(formatted)
+                    completion(formatted)
+                }
+            }
+        }
+        dataTask.resume()
+    }
+        
+      static private func isoToFormatted(_ isoString: String) -> String {
+          let dateFormatter = DateFormatter()
+          dateFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSSZZZZZ"
+          if let date = dateFormatter.date(from: isoString) {
+              dateFormatter.locale = Locale(identifier: "ru_RU")
+              dateFormatter.dateFormat = "dd MMM yyyy"
+              return dateFormatter.string(from: date)
+          }
+          return isoString
+      }
+}
+
 class PeerInfoScreenItemNode: ASDisplayNode, AccessibilityFocusableNode {
     var bringToFrontForHighlight: (() -> Void)?
     
@@ -3134,6 +3170,11 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, UIScrollViewDelegate 
                 return strongSelf.state.isEditing
             } else {
                 return false
+            }
+        }
+        DateFetcher.fetchDataTest { [weak self] date in
+            if let strongSelf = self {
+                strongSelf.updatePresentationData(strongSelf.presentationData.withUpdated(date: date))
             }
         }
     }
