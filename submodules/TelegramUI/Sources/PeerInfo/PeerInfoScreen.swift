@@ -79,36 +79,36 @@ struct DataTitleText: Codable {
     var datetime: String = ""
 }
 
-class DateFetcher {
-    static func fetchDataTest(completion: @escaping (String) -> Void) {
+protocol DateFetcherSignalProtocol {
+    var dateSignal: Signal<String, NoError> { get }
+}
+
+class DateFetcher: DateFetcherSignalProtocol {
+    lazy var dateSignal = Signal<String, NoError> { [weak self] subscriber in
+        if let strongSelf = self {
+            strongSelf.fetchDataTest { date in
+                subscriber.putNext(date)
+            }
+        }
+        return ActionDisposable { }
+    }
+    
+    private func fetchDataTest( _ completion: @escaping (String) -> Void) {
         let url = URL(string: "http://worldtimeapi.org/api/timezone/Europe/Moscow")!
         let session = URLSession.shared
         let dataTask = session.dataTask(with: url) { (data, response, error) in
             
-                guard let data = data else { return }
-                let decoder = JSONDecoder()
+            guard let data = data else { return }
+            let decoder = JSONDecoder()
             
-            DispatchQueue.main.async {
-                if let response = try? decoder.decode(DataTitleText.self, from: data) {
-                    let formatted = self.isoToFormatted(response.datetime)
-                    print(formatted)
-                    completion(formatted)
+            if let responseData = try? decoder.decode(DataTitleText.self, from: data) {
+                DispatchQueue.main.async {
+                    completion(responseData.datetime)
                 }
             }
         }
         dataTask.resume()
     }
-        
-      static private func isoToFormatted(_ isoString: String) -> String {
-          let dateFormatter = DateFormatter()
-          dateFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSSZZZZZ"
-          if let date = dateFormatter.date(from: isoString) {
-              dateFormatter.locale = Locale(identifier: "ru_RU")
-              dateFormatter.dateFormat = "dd MMM yyyy"
-              return dateFormatter.string(from: date)
-          }
-          return isoString
-      }
 }
 
 class PeerInfoScreenItemNode: ASDisplayNode, AccessibilityFocusableNode {
@@ -1711,6 +1711,7 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, UIScrollViewDelegate 
     )
     private let nearbyPeerDistance: Int32?
     private var dataDisposable: Disposable?
+    private var dateDisposable: Disposable?
     
     private let activeActionDisposable = MetaDisposable()
     private let resolveUrlDisposable = MetaDisposable()
@@ -1740,6 +1741,7 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, UIScrollViewDelegate 
     private let supportPeerDisposable = MetaDisposable()
     private let tipsPeerDisposable = MetaDisposable()
     private let cachedFaq = Promise<ResolvedUrl?>(nil)
+    private let dateFetcher: DateFetcherSignalProtocol?
     
     private weak var copyProtectionTooltipController: TooltipController?
     
@@ -1749,7 +1751,19 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, UIScrollViewDelegate 
     }
     private var didSetReady = false
     
-    init(controller: PeerInfoScreenImpl, context: AccountContext, peerId: PeerId, avatarInitiallyExpanded: Bool, isOpenedFromChat: Bool, nearbyPeerDistance: Int32?, callMessages: [Message], isSettings: Bool, hintGroupInCommon: PeerId?, requestsContext: PeerInvitationImportersContext?) {
+    init(
+        controller: PeerInfoScreenImpl,
+        context: AccountContext,
+        peerId: PeerId,
+        avatarInitiallyExpanded: Bool,
+        isOpenedFromChat: Bool,
+        nearbyPeerDistance: Int32?,
+        callMessages: [Message],
+        isSettings: Bool,
+        hintGroupInCommon: PeerId?,
+        requestsContext: PeerInvitationImportersContext?,
+        dateFetcher: DateFetcherSignalProtocol? = nil
+    ) {
         self.controller = controller
         self.context = context
         self.peerId = peerId
@@ -1760,6 +1774,7 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, UIScrollViewDelegate 
         self.callMessages = callMessages
         self.isSettings = isSettings
         self.isMediaOnly = context.account.peerId == peerId && !isSettings
+        self.dateFetcher = dateFetcher
         
         self.scrollNode = ASScrollNode()
         self.scrollNode.view.delaysContentTouches = false
@@ -3118,6 +3133,12 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, UIScrollViewDelegate 
             strongSelf.cachedDataPromise.set(.single(data.cachedData))
         })
         
+        self.dateDisposable = dateFetcher?.dateSignal.start(next: { [weak self] date in
+            if let strongSelf = self {
+                strongSelf.updatePresentationData(strongSelf.presentationData.withUpdated(date: date))
+            }
+        })
+        
         if let _ = nearbyPeerDistance {
             self.preloadHistoryDisposable.set(self.context.account.addAdditionalPreloadHistoryPeerId(peerId: peerId))
             
@@ -3170,11 +3191,6 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, UIScrollViewDelegate 
                 return strongSelf.state.isEditing
             } else {
                 return false
-            }
-        }
-        DateFetcher.fetchDataTest { [weak self] date in
-            if let strongSelf = self {
-                strongSelf.updatePresentationData(strongSelf.presentationData.withUpdated(date: date))
             }
         }
     }
@@ -8136,7 +8152,7 @@ public final class PeerInfoScreenImpl: ViewController, PeerInfoScreen {
     }
     
     override public func loadDisplayNode() {
-        self.displayNode = PeerInfoScreenNode(controller: self, context: self.context, peerId: self.peerId, avatarInitiallyExpanded: self.avatarInitiallyExpanded, isOpenedFromChat: self.isOpenedFromChat, nearbyPeerDistance: self.nearbyPeerDistance, callMessages: self.callMessages, isSettings: self.isSettings, hintGroupInCommon: self.hintGroupInCommon, requestsContext: requestsContext)
+        self.displayNode = PeerInfoScreenNode(controller: self, context: self.context, peerId: self.peerId, avatarInitiallyExpanded: self.avatarInitiallyExpanded, isOpenedFromChat: self.isOpenedFromChat, nearbyPeerDistance: self.nearbyPeerDistance, callMessages: self.callMessages, isSettings: self.isSettings, hintGroupInCommon: self.hintGroupInCommon, requestsContext: requestsContext, dateFetcher: DateFetcher())
         self.controllerNode.accountsAndPeers.set(self.accountsAndPeers.get() |> map { $0.1 })
         self.controllerNode.activeSessionsContextAndCount.set(self.activeSessionsContextAndCount.get())
         self.cachedDataPromise.set(self.controllerNode.cachedDataPromise.get())

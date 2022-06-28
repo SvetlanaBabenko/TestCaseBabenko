@@ -39,6 +39,17 @@ public struct PresentationDateTimeFormat: Equatable {
         self.decimalSeparator = decimalSeparator
         self.groupingSeparator = groupingSeparator
     }
+
+    public func fromIso(_ isoString: String) -> String {
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSSZZZZZ"
+        if let date = dateFormatter.date(from: isoString) {
+            dateFormatter.locale = Locale(identifier: "ru_RU")
+            dateFormatter.dateFormat = "dd MMM yyyy"
+            return dateFormatter.string(from: date)
+        }
+        return isoString
+    }
 }
 
 public struct PresentationAppIcon: Equatable {
